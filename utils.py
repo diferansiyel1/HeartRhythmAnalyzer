@@ -7,7 +7,6 @@ import io
 def load_rr_intervals(file):
     """Load RR intervals from text file."""
     try:
-        # Dosyayı bir StringIO nesnesine okuyalım
         if isinstance(file, str):
             data = pd.read_csv(file, header=None, names=['RR'])
         else:
@@ -26,66 +25,230 @@ def create_tachogram(rr_intervals):
         x=time,
         y=rr_intervals,
         mode='lines',
-        name='RR Intervals'
+        name='RR Intervals',
+        line=dict(color='#2E86C1')
     ))
 
     fig.update_layout(
         title='Tachogram',
         xaxis_title='Time (s)',
         yaxis_title='RR Interval (ms)',
-        showlegend=True
+        showlegend=True,
+        template='plotly_white'
     )
 
     return fig
 
-def create_psd_plot(frequencies, psd):
-    """Create power spectral density plot."""
+def create_psd_plot(frequencies, psd, vlf_range=(0.003, 0.04), lf_range=(0.04, 0.15), hf_range=(0.15, 0.4)):
+    """Create power spectral density plot with adjustable frequency bands."""
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=frequencies,
         y=psd,
         mode='lines',
-        name='PSD'
+        name='PSD',
+        line=dict(color='#2E86C1')
     ))
 
     fig.update_layout(
         title='Power Spectral Density',
         xaxis_title='Frequency (Hz)',
         yaxis_title='Power (ms²/Hz)',
-        showlegend=True
+        showlegend=True,
+        template='plotly_white'
     )
 
-    # Add vertical lines for frequency bands
-    for freq, label in [(0.04, 'VLF/LF'), (0.15, 'LF/HF')]:
-        fig.add_vline(x=freq, line_dash="dash", annotation_text=label)
+    # Add vertical lines and shaded areas for frequency bands
+    colors = ['rgba(255,165,0,0.2)', 'rgba(144,238,144,0.2)', 'rgba(173,216,230,0.2)']
+    bands = [
+        ('VLF', vlf_range[0], vlf_range[1], colors[0]),
+        ('LF', lf_range[0], lf_range[1], colors[1]),
+        ('HF', hf_range[0], hf_range[1], colors[2])
+    ]
+
+    for band_name, start, end, color in bands:
+        fig.add_vrect(
+            x0=start, x1=end,
+            fillcolor=color,
+            layer="below",
+            line_width=0,
+            annotation_text=band_name,
+            annotation_position="top left"
+        )
 
     return fig
 
-def generate_report(time_params, freq_params):
-    """Generate report as HTML string."""
-    html = """
-    <h2>HRV Analysis Report</h2>
+def create_dfa_plot(scales_log, fluct_log):
+    """Create DFA plot with alpha1 and alpha2 regression lines."""
+    fig = go.Figure()
 
-    <h3>Time Domain Parameters</h3>
-    <table>
-        <tr><th>Parameter</th><th>Value</th></tr>
+    # Plot fluctuation vs. scale
+    fig.add_trace(go.Scatter(
+        x=scales_log,
+        y=fluct_log,
+        mode='markers',
+        name='DFA',
+        marker=dict(color='#2E86C1')
+    ))
+
+    # Split into short-term and long-term components
+    idx_short = (10**scales_log <= 16)
+    idx_long = (10**scales_log > 16)
+
+    # Calculate and plot regression lines
+    if np.sum(idx_short) > 1:
+        alpha1, intercept1 = np.polyfit(scales_log[idx_short], fluct_log[idx_short], 1)
+        y_fit1 = alpha1 * scales_log[idx_short] + intercept1
+        fig.add_trace(go.Scatter(
+            x=scales_log[idx_short],
+            y=y_fit1,
+            mode='lines',
+            name=f'α1 = {alpha1:.3f}',
+            line=dict(color='#28B463', dash='dash')
+        ))
+
+    if np.sum(idx_long) > 1:
+        alpha2, intercept2 = np.polyfit(scales_log[idx_long], fluct_log[idx_long], 1)
+        y_fit2 = alpha2 * scales_log[idx_long] + intercept2
+        fig.add_trace(go.Scatter(
+            x=scales_log[idx_long],
+            y=y_fit2,
+            mode='lines',
+            name=f'α2 = {alpha2:.3f}',
+            line=dict(color='#E74C3C', dash='dash')
+        ))
+
+    fig.update_layout(
+        title='Detrended Fluctuation Analysis',
+        xaxis_title='log₁₀(n)',
+        yaxis_title='log₁₀(F(n))',
+        showlegend=True,
+        template='plotly_white'
+    )
+
+    return fig
+
+def process_multiple_files(files):
+    """Process multiple RR interval files and return combined results."""
+    results = []
+
+    for file in files:
+        rr_intervals = load_rr_intervals(file)
+        if not isinstance(rr_intervals, tuple):  # No error
+            is_valid, message = validate_rr_data(rr_intervals)
+            if is_valid:
+                # Calculate all parameters
+                time_params = calculate_time_domain_parameters(rr_intervals)
+                freq_params, _ = calculate_frequency_domain_parameters(rr_intervals)
+                dfa_params, _ = calculate_dfa(rr_intervals)
+
+                # Combine results
+                result = {
+                    'Filename': file.name,
+                    **time_params,
+                    **freq_params,
+                    **dfa_params
+                }
+                results.append(result)
+
+    return pd.DataFrame(results)
+
+def generate_report(time_params, freq_params, dfa_params=None):
+    """Generate report as HTML string with modern styling."""
+    html = """
+    <style>
+        .report-container {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        h2, h3 {
+            color: #2C3E50;
+            margin-top: 0;
+        }
+    </style>
+    <div class="report-container">
+        <h2>HRV Analysis Report</h2>
+
+        <div class="section">
+            <h3>Time Domain Parameters</h3>
+            <table>
+                <tr><th>Parameter</th><th>Value</th></tr>
     """
 
     for param, value in time_params.items():
         html += f"<tr><td>{param}</td><td>{value}</td></tr>"
 
     html += """
-    </table>
+            </table>
+        </div>
 
-    <h3>Frequency Domain Parameters</h3>
-    <table>
-        <tr><th>Parameter</th><th>Value</th></tr>
+        <div class="section">
+            <h3>Frequency Domain Parameters</h3>
+            <table>
+                <tr><th>Parameter</th><th>Value</th></tr>
     """
 
     for param, value in freq_params.items():
         if param != 'PSD':
             html += f"<tr><td>{param}</td><td>{value}</td></tr>"
 
-    html += "</table>"
+    if dfa_params:
+        html += """
+            </table>
+        </div>
+
+        <div class="section">
+            <h3>Detrended Fluctuation Analysis</h3>
+            <table>
+                <tr><th>Parameter</th><th>Value</th></tr>
+        """
+        for param, value in dfa_params.items():
+            html += f"<tr><td>{param}</td><td>{value}</td></tr>"
+
+    html += """
+            </table>
+        </div>
+    </div>
+    """
 
     return html
+
+# Placeholder functions -  These need to be implemented separately based on your HRV analysis requirements.
+def validate_rr_data(rr_intervals):
+    # Add your validation logic here
+    return True, ""
+
+def calculate_time_domain_parameters(rr_intervals):
+    # Add your time domain parameter calculations here
+    return {}
+
+def calculate_frequency_domain_parameters(rr_intervals):
+    # Add your frequency domain parameter calculations here (including PSD)
+    return {}, []
+
+def calculate_dfa(rr_intervals):
+    # Add your DFA calculation here
+    return {}, []
