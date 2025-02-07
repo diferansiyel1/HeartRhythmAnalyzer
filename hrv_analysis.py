@@ -44,8 +44,8 @@ def calculate_time_domain_parameters(rr_intervals):
         'pNN50 (%)': round(pnn50, 2)
     }
 
-def calculate_dfa(rr_intervals, scale_min=4, scale_max=None):
-    """Calculate Detrended Fluctuation Analysis."""
+def calculate_dfa(rr_intervals, scale_min=4, scale_max=None, alpha1_max=16):
+    """Calculate Detrended Fluctuation Analysis with adjustable window sizes."""
     rr = np.array(rr_intervals)
 
     # Integrate the signal
@@ -82,9 +82,9 @@ def calculate_dfa(rr_intervals, scale_min=4, scale_max=None):
     scales_log = np.log10(scales)
     fluct_log = np.log10(fluct)
 
-    # Split into short-term and long-term components
-    idx_short = (scales <= 16)
-    idx_long = (scales > 16)
+    # Split into short-term and long-term components using user-defined boundaries
+    idx_short = (scales <= alpha1_max)
+    idx_long = (scales > alpha1_max)
 
     # Calculate alpha1 (short-term)
     if np.sum(idx_short) > 1:

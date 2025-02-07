@@ -128,15 +128,23 @@ def create_dfa_plot(scales_log, fluct_log):
 
     return fig
 
-def process_multiple_files(files):
+def process_multiple_files(files, time_unit="milliseconds"):
     """Process multiple RR interval files and return combined results."""
     results = []
 
     for file in files:
         rr_intervals = load_rr_intervals(file)
         if not isinstance(rr_intervals, tuple):  # No error
+            # Convert to milliseconds if needed
+            if time_unit == "seconds":
+                rr_intervals = [rr * 1000 for rr in rr_intervals]
+
             is_valid, message = validate_rr_data(rr_intervals)
             if is_valid:
+                # Calculate total recording time
+                total_time_ms = sum(rr_intervals)
+                total_time_min = total_time_ms / (1000 * 60)
+
                 # Calculate all parameters
                 time_params = calculate_time_domain_parameters(rr_intervals)
                 freq_params, _ = calculate_frequency_domain_parameters(rr_intervals)
@@ -145,6 +153,7 @@ def process_multiple_files(files):
                 # Combine results
                 result = {
                     'Filename': file.name,
+                    'Recording Duration (min)': round(total_time_min, 2),
                     **time_params,
                     **freq_params,
                     **dfa_params
@@ -153,7 +162,7 @@ def process_multiple_files(files):
 
     return pd.DataFrame(results)
 
-def generate_report(time_params, freq_params, dfa_params=None):
+def generate_report(time_params, freq_params, dfa_params=None, total_time_min=None):
     """Generate report as HTML string with modern styling."""
     html = """
     <style>
@@ -162,18 +171,52 @@ def generate_report(time_params, freq_params, dfa_params=None):
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
+            background: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(90deg, #2C3E50 0%, #3498DB 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px 10px 0 0;
+            margin: -20px -20px 20px -20px;
+            position: relative;
+        }
+        .header h2 {
+            color: white !important;
+            margin: 0;
+        }
+        .signature {
+            position: absolute;
+            bottom: 10px;
+            right: 20px;
+            color: rgba(255,255,255,0.8);
+            font-style: italic;
         }
         .section {
-            background: white;
+            background: #f8f9fa;
             border-radius: 8px;
             padding: 15px;
             margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 5px solid;
+        }
+        .time-domain {
+            border-left-color: #2ECC71;
+        }
+        .frequency-domain {
+            border-left-color: #E74C3C;
+        }
+        .dfa {
+            border-left-color: #F39C12;
         }
         table {
             width: 100%;
             border-collapse: collapse;
             margin: 10px 0;
+            background: white;
+            border-radius: 5px;
+            overflow: hidden;
         }
         th, td {
             padding: 12px;
@@ -181,8 +224,9 @@ def generate_report(time_params, freq_params, dfa_params=None):
             border-bottom: 1px solid #eee;
         }
         th {
-            background-color: #f8f9fa;
+            background-color: rgba(0,0,0,0.05);
             font-weight: 600;
+            color: #2C3E50;
         }
         h2, h3 {
             color: #2C3E50;
@@ -190,9 +234,24 @@ def generate_report(time_params, freq_params, dfa_params=None):
         }
     </style>
     <div class="report-container">
-        <h2>HRV Analysis Report</h2>
+        <div class="header">
+            <h2>HRV Analysis Report</h2>
+            <div class="signature">HFO</div>
+        </div>
+    """
 
+    if total_time_min is not None:
+        html += f"""
         <div class="section">
+            <h3>Recording Information</h3>
+            <table>
+                <tr><th>Total Recording Time</th><td>{total_time_min:.2f} minutes</td></tr>
+            </table>
+        </div>
+        """
+
+    html += """
+        <div class="section time-domain">
             <h3>Time Domain Parameters</h3>
             <table>
                 <tr><th>Parameter</th><th>Value</th></tr>
@@ -205,7 +264,7 @@ def generate_report(time_params, freq_params, dfa_params=None):
             </table>
         </div>
 
-        <div class="section">
+        <div class="section frequency-domain">
             <h3>Frequency Domain Parameters</h3>
             <table>
                 <tr><th>Parameter</th><th>Value</th></tr>
@@ -220,7 +279,7 @@ def generate_report(time_params, freq_params, dfa_params=None):
             </table>
         </div>
 
-        <div class="section">
+        <div class="section dfa">
             <h3>Detrended Fluctuation Analysis</h3>
             <table>
                 <tr><th>Parameter</th><th>Value</th></tr>
