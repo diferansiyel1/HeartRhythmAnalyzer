@@ -16,16 +16,17 @@ Upload a text file containing RR intervals (in milliseconds) to begin the analys
 """)
 
 try:
-    # File upload
-    uploaded_file = st.file_uploader("Upload RR interval data (txt file)", type=['txt'])
+    # File upload with clear error handling
+    uploaded_file = st.file_uploader("Upload RR interval data (txt file)", type=['txt'], key='rr_file_uploader')
 
     if uploaded_file is not None:
-        # Load and validate data
-        rr_intervals = load_rr_intervals(uploaded_file)
+        st.info("Processing file...")
 
-        if isinstance(rr_intervals, tuple):  # Error occurred
-            st.error(rr_intervals[1])
-        else:
+        try:
+            # Try to read the file content directly
+            file_contents = uploaded_file.read().decode()
+            rr_intervals = [float(line.strip()) for line in file_contents.split('\n') if line.strip()]
+
             # Validate the data
             is_valid, message = validate_rr_data(rr_intervals)
 
@@ -70,8 +71,12 @@ try:
                     mime="text/csv"
                 )
 
+        except Exception as e:
+            st.error(f"Error processing file: {str(e)}")
+            st.info("Please make sure your file contains one RR interval value per line.")
+
 except Exception as e:
-    st.error(f"An error occurred: {str(e)}")
+    st.error(f"An application error occurred: {str(e)}")
 
 # Add explanatory text at the bottom
 st.markdown("""
